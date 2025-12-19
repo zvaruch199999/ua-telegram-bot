@@ -11,7 +11,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from db import init_db
 from states import OfferFlow
-from keyboards import start_kb, category_kb, status_kb
+from keyboards import start_kb, category_kb, status_kb, confirm_kb
 
 load_dotenv()
 
