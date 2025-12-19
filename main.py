@@ -19,6 +19,12 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN nie je nastavený")
 
+GROUP_ID = os.getenv("GROUP_ID")
+if not GROUP_ID:
+    raise RuntimeError("GROUP_ID nie je nastavený")
+
+GROUP_ID = int(GROUP_ID)
+
 bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode="HTML")
