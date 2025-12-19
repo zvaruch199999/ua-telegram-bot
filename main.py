@@ -89,6 +89,39 @@ async def status_step(call: CallbackQuery, state: FSMContext):
     await call.message.answer("✅ Статус збережено. Далі продовжимо…")
     await call.answer()
 
+@dp.callback_query(F.data == "confirm:yes")
+async def confirm_publish(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    # uloženie do databázy
+    create_offer(data)
+
+    # preview text
+    preview = (
+        f"<b>🏠 Нова пропозиція</b>\n\n"
+        f"<b>Тип:</b> {data['category']}\n"
+        f"<b>Вулиця:</b> {data['street']}\n"
+        f"<b>Статус:</b> {data['status']}"
+    )
+
+    # publikovanie do skupiny
+    await bot.send_message(
+        chat_id=GROUP_ID,
+        text=preview,
+        reply_markup=post_status_kb(1)  # dočasne ID = 1
+    )
+
+    await state.clear()
+    await call.message.answer("✅ Оголошення опубліковано в групі!")
+    await call.answer()
+
+
+@dp.callback_query(F.data == "confirm:no")
+async def confirm_cancel(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.answer("❌ Оголошення скасовано.")
+    await call.answer()
+
 
 async def main():
     init_db()
