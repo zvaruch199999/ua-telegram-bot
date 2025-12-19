@@ -16,6 +16,8 @@ from keyboards import start_kb, category_kb, status_kb
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN nie je nastavený")
 
 bot = Bot(
     token=BOT_TOKEN,
@@ -40,6 +42,7 @@ async def offer_start(call: CallbackQuery, state: FSMContext):
         "Оберіть категорію житла:",
         reply_markup=category_kb()
     )
+    await call.answer()
 
 
 @dp.callback_query(F.data.startswith("cat:"))
@@ -47,6 +50,7 @@ async def category_chosen(call: CallbackQuery, state: FSMContext):
     await state.update_data(category=call.data.split(":")[1])
     await state.set_state(OfferFlow.street)
     await call.message.answer("Вкажіть вулицю:")
+    await call.answer()
 
 
 @dp.message(OfferFlow.street)
@@ -63,6 +67,7 @@ async def street_step(message: Message, state: FSMContext):
 async def status_step(call: CallbackQuery, state: FSMContext):
     await state.update_data(status=call.data.split(":")[1])
     await call.message.answer("✅ Статус збережено. Далі продовжимо…")
+    await call.answer()
 
 
 async def main():
