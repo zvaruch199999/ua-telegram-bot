@@ -23,4 +23,3 @@ def status_kb():
         [InlineKeyboardButton(text="🟡 РЕЗЕРВОВАНА", callback_data="status:reserved")],
         [InlineKeyboardButton(text="🔴 НЕАКТУАЛЬНА", callback_data="status:inactive")]
     ])
-
