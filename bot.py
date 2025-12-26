@@ -1,7 +1,6 @@
 import os
 import asyncio
 from datetime import datetime
-from typing import List
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -9,7 +8,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-InputMediaPhoto,
+    InputMediaPhoto,
 )
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
@@ -17,27 +16,26 @@ from aiogram.filters import Command
 
 from openpyxl import Workbook, load_workbook
 
-# =======================
-# ENV VARIABLES
-# =======================
+# =========================
+# ENV
+# =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
-ADMINS = [int(x) for x in os.getenv("ADMINS", "").split(",")]
+ADMINS = [int(x) for x in os.getenv("ADMINS", "").split(",") if x]
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 
-# =======================
+# =========================
 # FILES
-# =======================
+# =========================
 DATA_DIR = "data"
 EXCEL_FILE = f"{DATA_DIR}/offers.xlsx"
-
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# =======================
-# EXCEL INIT
-# =======================
+# =========================
+# EXCEL
+# =========================
 HEADERS = [
     "ID",
     "Дата створення",
@@ -51,9 +49,10 @@ HEADERS = [
     "Депозит",
     "Комісія",
     "Паркінг",
-    "Заселення від",
-    "Огляди від",
+    "Заселення",
+    "Огляди",
     "Маклер",
+    "Фото (кількість)",
     "Статус",
 ]
 
@@ -68,6 +67,7 @@ def save_offer(data: dict) -> int:
     wb = load_workbook(EXCEL_FILE)
     ws = wb.active
     offer_id = ws.max_row
+
     ws.append([
         offer_id,
         datetime.now().strftime("%Y-%m-%d"),
@@ -84,29 +84,16 @@ def save_offer(data: dict) -> int:
         data["move_in"],
         data["viewing"],
         data["broker"],
+        len(data.get("photos", [])),
         "Активна",
     ])
+
     wb.save(EXCEL_FILE)
     return offer_id
 
-def update_status(offer_id: int, status: str):
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb.active
-    ws.cell(row=offer_id + 1, column=16).value = status
-    wb.save(EXCEL_FILE)
-
-def get_active_offers():
-    wb = load_workbook(EXCEL_FILE)
-    ws = wb.active
-    offers = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[15] == "Активна":
-            offers.append(row)
-    return offers
-
-# =======================
+# =========================
 # FSM
-# =======================
+# =========================
 class OfferFSM(StatesGroup):
     category = State()
     property_type = State()
@@ -124,17 +111,12 @@ class OfferFSM(StatesGroup):
     photos = State()
     summary = State()
 
-class CloseFSM(StatesGroup):
-    offer_id = State()
-    status = State()
-
-# =======================
+# =========================
 # KEYBOARDS
-# =======================
+# =========================
 def start_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Зробити пропозицію", callback_data="new_offer")],
-        [InlineKeyboardButton(text="📕 Закрити / Резерв", callback_data="close_offer")],
+        [InlineKeyboardButton(text="➕ Зробити пропозицію", callback_data="new_offer")]
     ])
 
 def category_kb():
@@ -143,37 +125,33 @@ def category_kb():
         [InlineKeyboardButton(text="Продажа", callback_data="Продажа")],
     ])
 
+def photos_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📸 Готово з фото", callback_data="photos_done")]
+    ])
+
 def finish_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово / Публікувати", callback_data="publish")],
+        [InlineKeyboardButton(text="✅ Опублікувати", callback_data="publish")],
         [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel")],
     ])
 
-def close_status_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟡 Резерв", callback_data="Резерв")],
-        [InlineKeyboardButton(text="🔴 Неактуальна", callback_data="Неактуальна")],
-    ])
-
-# =======================
-# BOT INIT
-# =======================
+# =========================
+# BOT
+# =========================
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-# =======================
+# =========================
 # START
-# =======================
+# =========================
 @dp.message(Command("start"))
 async def start(msg: Message):
-    await msg.answer(
-        "Вітаю 👋\nОберіть дію:",
-        reply_markup=start_kb()
-    )
+    await msg.answer("Вітаю 👋", reply_markup=start_kb())
 
-# =======================
-# NEW OFFER
-# =======================
+# =========================
+# CREATE OFFER
+# =========================
 @dp.callback_query(F.data == "new_offer")
 async def new_offer(cb: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -213,7 +191,7 @@ async def district(msg: Message, state: FSMContext):
 @dp.message(OfferFSM.advantages)
 async def advantages(msg: Message, state: FSMContext):
     await state.update_data(advantages=msg.text)
-    await msg.answer("Оренда (сума):")
+    await msg.answer("Оренда:")
     await state.set_state(OfferFSM.rent)
 
 @dp.message(OfferFSM.rent)
@@ -254,38 +232,63 @@ async def viewing(msg: Message, state: FSMContext):
 
 @dp.message(OfferFSM.broker)
 async def broker(msg: Message, state: FSMContext):
-    await state.update_data(broker=msg.text)
-    data = await state.get_data()
-    @dp.message(OfferFSM.photos, F.photo)
+    await state.update_data(broker=msg.text, photos=[])
+    await msg.answer(
+        "Надішли фото (можна декілька).\nПісля цього натисни кнопку 👇",
+        reply_markup=photos_kb()
+    )
+    await state.set_state(OfferFSM.photos)
+
+# =========================
+# PHOTOS (ВАЖЛИВО: НИЖЧЕ)
+# =========================
+@dp.message(OfferFSM.photos, F.photo)
 async def get_photos(msg: Message, state: FSMContext):
     data = await state.get_data()
     photos = data.get("photos", [])
-
     photos.append(msg.photo[-1].file_id)
-
     await state.update_data(photos=photos)
     await msg.answer(f"📸 Фото додано ({len(photos)})")
 
+@dp.callback_query(F.data == "photos_done")
+async def photos_done(cb: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
     text = "📋 ПРОПОЗИЦІЯ:\n\n"
     for k, v in data.items():
-        text += f"{k}: {v}\n"
+        if k != "photos":
+            text += f"{k}: {v}\n"
+    text += f"\n📸 Фото: {len(data.get('photos', []))}"
 
-    await msg.answer(text, reply_markup=finish_kb())
+    await cb.message.answer(text, reply_markup=finish_kb())
     await state.set_state(OfferFSM.summary)
 
-# =======================
+# =========================
 # PUBLISH
-# =======================
+# =========================
 @dp.callback_query(F.data == "publish")
 async def publish(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     offer_id = save_offer(data)
 
-    text = f"🆕 ПРОПОЗИЦІЯ №{offer_id}\n\n"
+    caption = f"🆕 ПРОПОЗИЦІЯ №{offer_id}\n\n"
     for k, v in data.items():
-        text += f"{k}: {v}\n"
+        if k != "photos":
+            caption += f"{k}: {v}\n"
 
-    await bot.send_message(GROUP_CHAT_ID, text)
+    photos = data.get("photos", [])
+
+    if photos:
+        media = []
+        for i, file_id in enumerate(photos):
+            if i == 0:
+                media.append(InputMediaPhoto(media=file_id, caption=caption))
+            else:
+                media.append(InputMediaPhoto(media=file_id))
+        await bot.send_media_group(GROUP_CHAT_ID, media)
+    else:
+        await bot.send_message(GROUP_CHAT_ID, caption)
+
     await cb.message.answer("✅ Опубліковано")
     await state.clear()
 
@@ -294,49 +297,9 @@ async def cancel(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await cb.message.answer("❌ Скасовано")
 
-# =======================
-# CLOSE / RESERVE
-# =======================
-@dp.callback_query(F.data == "close_offer")
-async def close_offer(cb: CallbackQuery, state: FSMContext):
-    offers = get_active_offers()
-    if not offers:
-        await cb.message.answer("Немає активних пропозицій")
-        return
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"#{o[0]} {o[4]}, {o[5]}",
-            callback_data=f"close_{o[0]}"
-        )] for o in offers
-    ])
-
-    await cb.message.answer("Оберіть пропозицію:", reply_markup=kb)
-
-@dp.callback_query(F.data.startswith("close_"))
-async def choose_close(cb: CallbackQuery, state: FSMContext):
-    offer_id = int(cb.data.split("_")[1])
-    await state.update_data(offer_id=offer_id)
-    await cb.message.answer("Статус:", reply_markup=close_status_kb())
-    await state.set_state(CloseFSM.status)
-
-@dp.callback_query(CloseFSM.status)
-async def set_status(cb: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    offer_id = data["offer_id"]
-    status = cb.data
-
-    update_status(offer_id, status)
-    await bot.send_message(
-        GROUP_CHAT_ID,
-        f"⚠️ ПРОПОЗИЦІЯ №{offer_id}\nСтатус: {status}"
-    )
-    await cb.message.answer("Статус оновлено")
-    await state.clear()
-
-# =======================
+# =========================
 # MAIN
-# =======================
+# =========================
 async def main():
     init_excel()
     await dp.start_polling(bot)
