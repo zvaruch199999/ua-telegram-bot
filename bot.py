@@ -276,4 +276,24 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main()
+# ===== REPLY BUTTONS SUPPORT =====
+@dp.message(F.text == "➕ Створити пропозицію")
+async def reply_new_offer(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Категорія:")
+    await state.set_state(OfferFSM.category)
+
+@dp.message(F.text == "📕 Закрити пропозицію / угоду")
+async def reply_close_offer(message: Message, state: FSMContext):
+    await state.clear()
+    rows = get_active_rows()
+    if not rows:
+        await message.answer("Немає активних пропозицій")
+        return
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"Пропозиція {r}", callback_data=f"row_{r}")]
+        for r in rows
+    ])
+    await message.answer("Оберіть пропозицію:", reply_markup=kb)
