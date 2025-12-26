@@ -256,6 +256,15 @@ async def viewing(msg: Message, state: FSMContext):
 async def broker(msg: Message, state: FSMContext):
     await state.update_data(broker=msg.text)
     data = await state.get_data()
+    @dp.message(OfferFSM.photos, F.photo)
+async def get_photos(msg: Message, state: FSMContext):
+    data = await state.get_data()
+    photos = data.get("photos", [])
+
+    photos.append(msg.photo[-1].file_id)
+
+    await state.update_data(photos=photos)
+    await msg.answer(f"📸 Фото додано ({len(photos)})")
 
     text = "📋 ПРОПОЗИЦІЯ:\n\n"
     for k, v in data.items():
