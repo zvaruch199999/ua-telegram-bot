@@ -33,6 +33,33 @@ EXCEL_FILE = f"{DATA_DIR}/offers.xlsx"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # =========================
+# FIELD LABELS (UA)
+# =========================
+FIELD_LABELS = {
+    "category": "Категорія",
+    "property_type": "Тип житла",
+    "street": "Вулиця",
+    "city": "Місто",
+    "district": "Район",
+    "advantages": "Переваги",
+    "rent": "Орендна плата",
+    "deposit": "Депозит",
+    "commission": "Комісія",
+    "parking": "Паркінг",
+    "move_in": "Заселення від",
+    "viewing": "Огляди від",
+    "broker": "Маклер",
+}
+
+def format_offer_text(data: dict) -> str:
+    text = ""
+    for key, label in FIELD_LABELS.items():
+        if key in data:
+            text += f"{label}: {data[key]}\n"
+    text += f"\n📸 Фото: {len(data.get('photos', []))}"
+    return text
+
+# =========================
 # EXCEL
 # =========================
 HEADERS = [
@@ -66,7 +93,6 @@ def save_offer(data: dict) -> int:
     wb = load_workbook(EXCEL_FILE)
     ws = wb.active
     offer_id = ws.max_row
-
     ws.append([
         offer_id,
         datetime.now().strftime("%Y-%m-%d"),
@@ -86,7 +112,6 @@ def save_offer(data: dict) -> int:
         len(data.get("photos", [])),
         "Активна",
     ])
-
     wb.save(EXCEL_FILE)
     return offer_id
 
@@ -138,23 +163,9 @@ def finish_kb():
     ])
 
 def edit_kb():
-    fields = [
-        ("Категорія", "category"),
-        ("Тип житла", "property_type"),
-        ("Вулиця", "street"),
-        ("Місто", "city"),
-        ("Район", "district"),
-        ("Переваги", "advantages"),
-        ("Орендна плата", "rent"),
-        ("Депозит", "deposit"),
-        ("Комісія", "commission"),
-        ("Паркінг", "parking"),
-        ("Заселення", "move_in"),
-        ("Огляди", "viewing"),
-        ("Маклер", "broker"),
-    ]
-    kb = [[InlineKeyboardButton(text=name, callback_data=f"edit_{field}")]
-          for name, field in fields]
+    kb = []
+    for key, label in FIELD_LABELS.items():
+        kb.append([InlineKeyboardButton(text=label, callback_data=f"edit_{key}")])
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_summary")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -183,89 +194,86 @@ async def new_offer(cb: CallbackQuery, state: FSMContext):
 @dp.callback_query(OfferFSM.category)
 async def category(cb: CallbackQuery, state: FSMContext):
     await state.update_data(category=cb.data)
-    await cb.message.answer("Вкажіть тип житла:")
+    await cb.message.answer("Тип житла:")
     await state.set_state(OfferFSM.property_type)
 
 @dp.message(OfferFSM.property_type)
-async def property_type(msg: Message, state: FSMContext):
+async def prop(msg: Message, state: FSMContext):
     await state.update_data(property_type=msg.text)
-    await msg.answer("Вкажіть вулицю:")
+    await msg.answer("Вулиця:")
     await state.set_state(OfferFSM.street)
 
 @dp.message(OfferFSM.street)
 async def street(msg: Message, state: FSMContext):
     await state.update_data(street=msg.text)
-    await msg.answer("Вкажіть місто:")
+    await msg.answer("Місто:")
     await state.set_state(OfferFSM.city)
 
 @dp.message(OfferFSM.city)
 async def city(msg: Message, state: FSMContext):
     await state.update_data(city=msg.text)
-    await msg.answer("Вкажіть район:")
+    await msg.answer("Район:")
     await state.set_state(OfferFSM.district)
 
 @dp.message(OfferFSM.district)
 async def district(msg: Message, state: FSMContext):
     await state.update_data(district=msg.text)
-    await msg.answer("Опишіть переваги житла:")
+    await msg.answer("Переваги:")
     await state.set_state(OfferFSM.advantages)
 
 @dp.message(OfferFSM.advantages)
-async def advantages(msg: Message, state: FSMContext):
+async def adv(msg: Message, state: FSMContext):
     await state.update_data(advantages=msg.text)
-    await msg.answer("Вкажіть орендну плату / ціну:")
+    await msg.answer("Орендна плата / ціна:")
     await state.set_state(OfferFSM.rent)
 
 @dp.message(OfferFSM.rent)
 async def rent(msg: Message, state: FSMContext):
     await state.update_data(rent=msg.text)
-    await msg.answer("Вкажіть депозит:")
+    await msg.answer("Депозит:")
     await state.set_state(OfferFSM.deposit)
 
 @dp.message(OfferFSM.deposit)
-async def deposit(msg: Message, state: FSMContext):
+async def dep(msg: Message, state: FSMContext):
     await state.update_data(deposit=msg.text)
-    await msg.answer("Вкажіть комісію:")
+    await msg.answer("Комісія:")
     await state.set_state(OfferFSM.commission)
 
 @dp.message(OfferFSM.commission)
-async def commission(msg: Message, state: FSMContext):
+async def com(msg: Message, state: FSMContext):
     await state.update_data(commission=msg.text)
-    await msg.answer("Інформація про паркінг:")
+    await msg.answer("Паркінг:")
     await state.set_state(OfferFSM.parking)
 
 @dp.message(OfferFSM.parking)
-async def parking(msg: Message, state: FSMContext):
+async def park(msg: Message, state: FSMContext):
     await state.update_data(parking=msg.text)
-    await msg.answer("Заселення можливе від:")
+    await msg.answer("Заселення від:")
     await state.set_state(OfferFSM.move_in)
 
 @dp.message(OfferFSM.move_in)
-async def move_in(msg: Message, state: FSMContext):
+async def move(msg: Message, state: FSMContext):
     await state.update_data(move_in=msg.text)
-    await msg.answer("Огляди можливі від:")
+    await msg.answer("Огляди від:")
     await state.set_state(OfferFSM.viewing)
 
 @dp.message(OfferFSM.viewing)
-async def viewing(msg: Message, state: FSMContext):
+async def view(msg: Message, state: FSMContext):
     await state.update_data(viewing=msg.text)
-    await msg.answer("Вкажіть нік маклера:")
+    await msg.answer("Маклер (@нік):")
     await state.set_state(OfferFSM.broker)
 
 @dp.message(OfferFSM.broker)
 async def broker(msg: Message, state: FSMContext):
     await state.update_data(broker=msg.text, photos=[])
-    await msg.answer(
-        "Надішліть фото обʼєкта (можна декілька).\nПісля завершення натисніть кнопку 👇",
-        reply_markup=photos_kb()
-    )
+    await msg.answer("Надішліть фото (можна декілька):", reply_markup=photos_kb())
     await state.set_state(OfferFSM.photos)
 
 # =========================
 # PHOTOS
 # =========================
 @dp.message(OfferFSM.photos, F.photo)
-async def get_photos(msg: Message, state: FSMContext):
+async def photos(msg: Message, state: FSMContext):
     data = await state.get_data()
     photos = data.get("photos", [])
     photos.append(msg.photo[-1].file_id)
@@ -275,11 +283,7 @@ async def get_photos(msg: Message, state: FSMContext):
 @dp.callback_query(F.data == "photos_done")
 async def photos_done(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    text = "📋 ПЕРЕВІРТЕ ПРОПОЗИЦІЮ:\n\n"
-    for k, v in data.items():
-        if k != "photos":
-            text += f"{k}: {v}\n"
-    text += f"\nФото: {len(data.get('photos', []))}"
+    text = "📋 ПЕРЕВІРТЕ ПРОПОЗИЦІЮ:\n\n" + format_offer_text(data)
     await cb.message.answer(text, reply_markup=finish_kb())
     await state.set_state(OfferFSM.summary)
 
@@ -302,11 +306,15 @@ async def apply_edit(msg: Message, state: FSMContext):
     data = await state.get_data()
     field = data["edit_field"]
     await state.update_data({field: msg.text})
-    await photos_done(msg, state)
+    text = "📋 ОНОВЛЕНА ПРОПОЗИЦІЯ:\n\n" + format_offer_text(await state.get_data())
+    await msg.answer(text, reply_markup=finish_kb())
+    await state.set_state(OfferFSM.summary)
 
 @dp.callback_query(F.data == "back_to_summary")
 async def back(cb: CallbackQuery, state: FSMContext):
-    await photos_done(cb, state)
+    data = await state.get_data()
+    text = "📋 ПРОПОЗИЦІЯ:\n\n" + format_offer_text(data)
+    await cb.message.answer(text, reply_markup=finish_kb())
 
 # =========================
 # PUBLISH
@@ -316,19 +324,13 @@ async def publish(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     offer_id = save_offer(data)
 
-    caption = f"🆕 ПРОПОЗИЦІЯ №{offer_id}\n\n"
-    for k, v in data.items():
-        if k != "photos":
-            caption += f"{k}: {v}\n"
-
+    caption = f"🆕 ПРОПОЗИЦІЯ №{offer_id}\n\n" + format_offer_text(data)
     photos = data.get("photos", [])
+
     if photos:
         media = []
-        for i, file_id in enumerate(photos):
-            media.append(InputMediaPhoto(
-                media=file_id,
-                caption=caption if i == 0 else None
-            ))
+        for i, p in enumerate(photos):
+            media.append(InputMediaPhoto(media=p, caption=caption if i == 0 else None))
         await bot.send_media_group(GROUP_CHAT_ID, media)
     else:
         await bot.send_message(GROUP_CHAT_ID, caption)
