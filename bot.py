@@ -91,17 +91,34 @@ async def start(message: Message, state: FSMContext):
     )
     await state.set_state(OfferFSM.category)
 
-# ================= CATEGORY =================
+# ================= CATEGORY (BUTTON) =================
 @dp.callback_query(F.data.startswith("cat_"))
-async def set_category(call: CallbackQuery, state: FSMContext):
+async def set_category_button(call: CallbackQuery, state: FSMContext):
     category = "Оренда" if call.data == "cat_rent" else "Продаж"
     await state.update_data(category=category)
-    await call.message.answer("Тип житла:")
     await call.message.edit_reply_markup(None)
+    await call.message.answer("Тип житла:")
     await state.set_state(OfferFSM.property_type)
     await call.answer()
 
-# ================= OFFER FSM (TEXT) =================
+# ================= CATEGORY (TEXT FALLBACK) =================
+@dp.message(OfferFSM.category)
+async def set_category_text(message: Message, state: FSMContext):
+    text = message.text.lower()
+
+    if "оренд" in text:
+        category = "Оренда"
+    elif "прод" in text:
+        category = "Продаж"
+    else:
+        await message.answer("❗ Напишіть `Оренда` або `Продаж`.")
+        return
+
+    await state.update_data(category=category)
+    await message.answer("Тип житла:")
+    await state.set_state(OfferFSM.property_type)
+
+# ================= OFFER FSM =================
 @dp.message(OfferFSM.property_type)
 async def s2(m,s): await s.update_data(property_type=m.text); await m.answer("Вулиця:"); await s.set_state(OfferFSM.street)
 
