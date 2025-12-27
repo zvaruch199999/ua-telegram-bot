@@ -11,15 +11,15 @@ from aiogram.fsm.context import FSMContext
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID_RAW = os.getenv("GROUP_ID")
+GROUP_CHAT_ID_RAW = os.getenv("GROUP_CHAT_ID")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN не заданий")
 
-if not GROUP_ID_RAW:
-    raise RuntimeError("GROUP_ID не заданий")
+if not GROUP_CHAT_ID_RAW:
+    raise RuntimeError("GROUP_CHAT_ID не заданий")
 
-GROUP_ID = int(GROUP_ID_RAW)
+GROUP_CHAT_ID = int(GROUP_CHAT_ID_RAW)
 
 # ================= BOT =================
 bot = Bot(BOT_TOKEN)
@@ -129,7 +129,7 @@ async def publish(cb: CallbackQuery):
         f"👤 Маклер: @{offer['author']}"
     )
 
-    await bot.send_media_group(GROUP_ID, media)
+    await bot.send_media_group(GROUP_CHAT_ID, media)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -140,7 +140,7 @@ async def publish(cb: CallbackQuery):
         [InlineKeyboardButton(text="✅ Закрити угоду", callback_data=f"close:{offer_id}")]
     ])
 
-    await bot.send_message(GROUP_ID, "🔧 Керування статусом:", reply_markup=kb)
+    await bot.send_message(GROUP_CHAT_ID, "🔧 Керування статусом:", reply_markup=kb)
     await cb.answer("Опубліковано")
 
 
