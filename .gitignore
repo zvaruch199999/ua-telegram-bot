@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.env
+
+# Google OAuth
+client_secret*.json
+token.json
+
+# Data
+data/*.db
+data/*.sqlite
+
+# OS
+.DS_Store
