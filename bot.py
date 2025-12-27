@@ -2,7 +2,13 @@ import asyncio
 import os
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, InputMediaPhoto
+from aiogram.types import (
+    Message,
+    InputMediaPhoto,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery,
+)
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -31,7 +37,20 @@ class OfferFSM(StatesGroup):
     broker = State()
     photos = State()
 
-# ================= START =================
+# ================= KEYBOARD =================
+
+def status_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🟢 Актуально", callback_data="status:active"),
+                InlineKeyboardButton(text="🟡 Резерв", callback_data="status:reserved"),
+                InlineKeyboardButton(text="🔴 Неактуально", callback_data="status:inactive"),
+            ]
+        ]
+    )
+
+# ================= START / CANCEL =================
 
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
@@ -48,7 +67,7 @@ async def cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Дію скасовано. Напишіть /start")
 
-# ================= CREATE =================
+# ================= CREATE FLOW =================
 
 @dp.message(F.text.lower() == "створити")
 async def create(message: Message, state: FSMContext):
@@ -155,7 +174,8 @@ async def finish(message: Message, state: FSMContext):
     photos = data.get("photos", [])
 
     text = (
-        "🏠 НОВА ПРОПОЗИЦІЯ\n\n"
+        "🏠 НОВА ПРОПОЗИЦІЯ\n"
+        "Статус: 🟢 Актуально\n\n"
         f"Категорія: {data['category']}\n"
         f"Тип: {data['property_type']}\n"
         f"Адреса: {data['street']}, {data['city']}\n"
@@ -170,16 +190,65 @@ async def finish(message: Message, state: FSMContext):
         f"Маклер: {data['broker']}"
     )
 
+    # 🔍 PREVIEW IN BOT
+    if photos:
+        preview = [InputMediaPhoto(media=photos[0], caption=text)]
+        for p in photos[1:]:
+            preview.append(InputMediaPhoto(media=p))
+        await message.answer_media_group(preview)
+    else:
+        await message.answer(text)
+
+    await message.answer("👆 Це фінальний вигляд пропозиції")
+
+    # 📢 POST TO GROUP
     if photos:
         media = [InputMediaPhoto(media=photos[0], caption=text)]
         for p in photos[1:]:
             media.append(InputMediaPhoto(media=p))
-        await bot.send_media_group(GROUP_CHAT_ID, media)
-    else:
-        await bot.send_message(GROUP_CHAT_ID, text)
 
-    await message.answer("✅ Пропозицію успішно опубліковано")
+        msgs = await bot.send_media_group(GROUP_CHAT_ID, media)
+        await bot.send_message(
+            GROUP_CHAT_ID,
+            "⬇️ Змінити статус:",
+            reply_markup=status_keyboard(),
+            reply_to_message_id=msgs[0].message_id,
+        )
+    else:
+        await bot.send_message(
+            GROUP_CHAT_ID,
+            text,
+            reply_markup=status_keyboard(),
+        )
+
+    await message.answer("✅ Пропозицію опубліковано в групу")
     await state.clear()
+
+# ================= STATUS CHANGE =================
+
+@dp.callback_query(F.data.startswith("status:"))
+async def change_status(callback: CallbackQuery):
+    status_map = {
+        "active": "🟢 Актуально",
+        "reserved": "🟡 Резервовано",
+        "inactive": "🔴 Неактуально",
+    }
+
+    new_status = status_map[callback.data.split(":")[1]]
+    msg = callback.message
+
+    if msg.reply_to_message:
+        original = msg.reply_to_message
+        text = original.caption
+        lines = text.splitlines()
+        lines[1] = f"Статус: {new_status}"
+        await original.edit_caption("\n".join(lines))
+    else:
+        lines = msg.text.splitlines()
+        lines[1] = f"Статус: {new_status}"
+        await msg.edit_text("\n".join(lines), reply_markup=status_keyboard())
+
+    await callback.answer(f"Статус змінено: {new_status}")
 
 # ================= RUN =================
 
