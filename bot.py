@@ -14,19 +14,14 @@ from aiogram.fsm.state import StatesGroup, State
 
 from openpyxl import Workbook, load_workbook
 
-# ================= SAFE ENV =================
+# ================= ENV (SAFE) =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_CHAT_ID_RAW = os.getenv("GROUP_CHAT_ID")
 
 if not BOT_TOKEN:
-    raise RuntimeError("❌ BOT_TOKEN не заданий у змінних середовища")
+    raise RuntimeError("❌ BOT_TOKEN не заданий")
 
-GROUP_CHAT_ID = None
-if GROUP_CHAT_ID_RAW:
-    try:
-        GROUP_CHAT_ID = int(GROUP_CHAT_ID_RAW)
-    except ValueError:
-        raise RuntimeError("❌ GROUP_CHAT_ID має бути числом")
+GROUP_CHAT_ID = int(GROUP_CHAT_ID_RAW) if GROUP_CHAT_ID_RAW else None
 
 # ================= FILES =================
 DATA_DIR = "data"
@@ -48,7 +43,7 @@ def init_excel():
         ws.append(HEADERS)
         wb.save(EXCEL_FILE)
 
-def save_offer(data):
+def save_offer(data: dict):
     wb = load_workbook(EXCEL_FILE)
     ws = wb.active
     ws.append([
@@ -95,15 +90,12 @@ async def start(message: Message, state: FSMContext):
             InlineKeyboardButton(text="Продаж", callback_data="cat_sale")
         ]
     ])
-    await message.answer(
-        "Вітаю 👋\nОберіть категорію:",
-        reply_markup=kb
-    )
+    await message.answer("Вітаю 👋\nОберіть категорію:", reply_markup=kb)
     await state.set_state(OfferFSM.category)
 
-# ================= CATEGORY (BUTTON) =================
+# ================= CATEGORY BUTTON =================
 @dp.callback_query(F.data.startswith("cat_"))
-async def set_category_button(call: CallbackQuery, state: FSMContext):
+async def category_button(call: CallbackQuery, state: FSMContext):
     category = "Оренда" if call.data == "cat_rent" else "Продаж"
     await state.update_data(category=category)
     await call.message.edit_reply_markup(None)
@@ -111,83 +103,116 @@ async def set_category_button(call: CallbackQuery, state: FSMContext):
     await state.set_state(OfferFSM.property_type)
     await call.answer()
 
-# ================= CATEGORY (TEXT FALLBACK) =================
+# ================= CATEGORY TEXT =================
 @dp.message(OfferFSM.category)
-async def set_category_text(message: Message, state: FSMContext):
+async def category_text(message: Message, state: FSMContext):
     text = message.text.lower()
     if "оренд" in text:
         category = "Оренда"
     elif "прод" in text:
         category = "Продаж"
     else:
-        await message.answer("❗ Напишіть `Оренда` або `Продаж`.")
+        await message.answer("Напишіть `Оренда` або `Продаж`")
         return
 
     await state.update_data(category=category)
     await message.answer("Тип житла:")
     await state.set_state(OfferFSM.property_type)
 
-# ================= OFFER FLOW =================
+# ================= FLOW =================
 @dp.message(OfferFSM.property_type)
-async def s2(m,s): await s.update_data(property_type=m.text); await m.answer("Вулиця:"); await s.set_state(OfferFSM.street)
+async def step_property_type(message: Message, state: FSMContext):
+    await state.update_data(property_type=message.text)
+    await message.answer("Вулиця:")
+    await state.set_state(OfferFSM.street)
 
 @dp.message(OfferFSM.street)
-async def s3(m,s): await s.update_data(street=m.text); await m.answer("Місто:"); await s.set_state(OfferFSM.city)
+async def step_street(message: Message, state: FSMContext):
+    await state.update_data(street=message.text)
+    await message.answer("Місто:")
+    await state.set_state(OfferFSM.city)
 
 @dp.message(OfferFSM.city)
-async def s4(m,s): await s.update_data(city=m.text); await m.answer("Район:"); await s.set_state(OfferFSM.district)
+async def step_city(message: Message, state: FSMContext):
+    await state.update_data(city=message.text)
+    await message.answer("Район:")
+    await state.set_state(OfferFSM.district)
 
 @dp.message(OfferFSM.district)
-async def s5(m,s): await s.update_data(district=m.text); await m.answer("Переваги житла:"); await s.set_state(OfferFSM.advantages)
+async def step_district(message: Message, state: FSMContext):
+    await state.update_data(district=message.text)
+    await message.answer("Переваги житла:")
+    await state.set_state(OfferFSM.advantages)
 
 @dp.message(OfferFSM.advantages)
-async def s6(m,s): await s.update_data(advantages=m.text); await m.answer("Ціна:"); await s.set_state(OfferFSM.rent)
+async def step_advantages(message: Message, state: FSMContext):
+    await state.update_data(advantages=message.text)
+    await message.answer("Ціна:")
+    await state.set_state(OfferFSM.rent)
 
 @dp.message(OfferFSM.rent)
-async def s7(m,s): await s.update_data(rent=m.text); await m.answer("Депозит:"); await s.set_state(OfferFSM.deposit)
+async def step_rent(message: Message, state: FSMContext):
+    await state.update_data(rent=message.text)
+    await message.answer("Депозит:")
+    await state.set_state(OfferFSM.deposit)
 
 @dp.message(OfferFSM.deposit)
-async def s8(m,s): await s.update_data(deposit=m.text); await m.answer("Комісія:"); await s.set_state(OfferFSM.commission)
+async def step_deposit(message: Message, state: FSMContext):
+    await state.update_data(deposit=message.text)
+    await message.answer("Комісія:")
+    await state.set_state(OfferFSM.commission)
 
 @dp.message(OfferFSM.commission)
-async def s9(m,s): await s.update_data(commission=m.text); await m.answer("Паркінг:"); await s.set_state(OfferFSM.parking)
+async def step_commission(message: Message, state: FSMContext):
+    await state.update_data(commission=message.text)
+    await message.answer("Паркінг:")
+    await state.set_state(OfferFSM.parking)
 
 @dp.message(OfferFSM.parking)
-async def s10(m,s): await s.update_data(parking=m.text); await m.answer("Заселення від:"); await s.set_state(OfferFSM.move_in)
+async def step_parking(message: Message, state: FSMContext):
+    await state.update_data(parking=message.text)
+    await message.answer("Заселення від:")
+    await state.set_state(OfferFSM.move_in)
 
 @dp.message(OfferFSM.move_in)
-async def s11(m,s): await s.update_data(move_in=m.text); await m.answer("Огляди від:"); await s.set_state(OfferFSM.viewing)
+async def step_move_in(message: Message, state: FSMContext):
+    await state.update_data(move_in=message.text)
+    await message.answer("Огляди від:")
+    await state.set_state(OfferFSM.viewing)
 
 @dp.message(OfferFSM.viewing)
-async def s12(m,s): await s.update_data(viewing=m.text); await m.answer("Маклер (нік):"); await s.set_state(OfferFSM.broker)
+async def step_viewing(message: Message, state: FSMContext):
+    await state.update_data(viewing=message.text)
+    await message.answer("Маклер (нік):")
+    await state.set_state(OfferFSM.broker)
 
 @dp.message(OfferFSM.broker)
-async def s13(m,s):
-    await s.update_data(broker=m.text, photos=[])
-    await m.answer("Надішліть фото. Коли завершили — напишіть будь-який текст.")
-    await s.set_state(OfferFSM.photos)
+async def step_broker(message: Message, state: FSMContext):
+    await state.update_data(broker=message.text, photos=[])
+    await message.answer("Надішліть фото. Коли готово — напишіть будь-який текст.")
+    await state.set_state(OfferFSM.photos)
 
 @dp.message(OfferFSM.photos, F.photo)
-async def s14(m,s):
-    d = await s.get_data()
-    d["photos"].append(m.photo[-1].file_id)
-    await s.update_data(photos=d["photos"])
-    await m.answer("Фото додано.")
+async def step_photos(message: Message, state: FSMContext):
+    data = await state.get_data()
+    data["photos"].append(message.photo[-1].file_id)
+    await state.update_data(photos=data["photos"])
+    await message.answer("Фото додано.")
 
 @dp.message(OfferFSM.photos)
-async def finish(m,s):
-    data = await s.get_data()
+async def finish(message: Message, state: FSMContext):
+    data = await state.get_data()
     save_offer(data)
 
     if GROUP_CHAT_ID:
         media = [
             InputMediaPhoto(p, caption="🏠 Нова пропозиція" if i == 0 else None)
-            for i,p in enumerate(data["photos"])
+            for i, p in enumerate(data["photos"])
         ]
         await bot.send_media_group(GROUP_CHAT_ID, media)
 
-    await m.answer("✅ Пропозицію збережено.\n\nНапишіть /start для нової.")
-    await s.clear()
+    await message.answer("✅ Пропозицію створено.\nНапишіть /start для нової.")
+    await state.clear()
 
 # ================= MAIN =================
 async def main():
