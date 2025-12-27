@@ -106,8 +106,12 @@ async def start(message: Message, state: FSMContext):
     await state.set_state(OfferFSM.category)
 
 # ================= CATEGORY =================
-@dp.callback_query(F.data.startswith("cat_"), OfferFSM.category)
+@dp.callback_query(F.data.startswith("cat_"))
 async def choose_category(call: CallbackQuery, state: FSMContext):
+    if await state.get_state() != OfferFSM.category.state:
+        await call.answer()
+        return
+
     category = "Оренда" if call.data == "cat_rent" else "Продаж"
     await state.update_data(category=category)
     await call.message.edit_reply_markup(None)
@@ -115,7 +119,7 @@ async def choose_category(call: CallbackQuery, state: FSMContext):
     await state.set_state(OfferFSM.property_type)
     await call.answer()
 
-# ================= FSM STEPS =================
+# ================= STEPS =================
 @dp.message(OfferFSM.property_type)
 async def step_property_type(message: Message, state: FSMContext):
     await state.update_data(property_type=message.text)
@@ -185,7 +189,7 @@ async def step_viewing(message: Message, state: FSMContext):
 @dp.message(OfferFSM.broker)
 async def step_broker(message: Message, state: FSMContext):
     await state.update_data(broker=message.text, photos=[])
-    await message.answer("Надішліть фото. Коли готово — натисніть «Готово».")
+    await message.answer("Надішліть фото. Після цього натисніть «Готово».")
     await state.set_state(OfferFSM.photos)
 
 # ================= PHOTOS =================
@@ -206,8 +210,12 @@ async def add_photo(message: Message, state: FSMContext):
     )
 
 # ================= FINISH =================
-@dp.callback_query(F.data == "finish_offer", OfferFSM.photos)
+@dp.callback_query(F.data == "finish_offer")
 async def finish_offer(call: CallbackQuery, state: FSMContext):
+    if await state.get_state() != OfferFSM.photos.state:
+        await call.answer("Дія неактивна", show_alert=True)
+        return
+
     data = await state.get_data()
 
     group_msg_id = None
@@ -222,7 +230,9 @@ async def finish_offer(call: CallbackQuery, state: FSMContext):
     save_offer(data, group_msg_id)
 
     await call.message.edit_reply_markup(None)
-    await call.message.answer("✅ Пропозицію успішно створено!\n\n/start — створити нову")
+    await call.message.answer(
+        "✅ Пропозицію успішно створено!\n\n/start — створити нову"
+    )
     await state.clear()
     await call.answer()
 
