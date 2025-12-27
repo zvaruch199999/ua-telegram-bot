@@ -3,7 +3,11 @@ import asyncio
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, InputMediaPhoto
+from aiogram.types import (
+    Message, CallbackQuery,
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    InputMediaPhoto
+)
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -75,33 +79,29 @@ dp = Dispatcher()
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
     await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Оренда", callback_data="cat_rent"),
+            InlineKeyboardButton(text="Продаж", callback_data="cat_sale")
+        ]
+    ])
     await message.answer(
-        "Вітаю 👋\n\n"
-        "Команди:\n"
-        "👉 `створити` — створити пропозицію\n"
-        "👉 `закрити` — закрити пропозицію (буде пізніше)\n"
-        "👉 `скасувати` — скасувати дію\n"
+        "Вітаю 👋\nОберіть категорію:",
+        reply_markup=kb
     )
-
-# ================= CANCEL =================
-@dp.message(F.text.lower() == "скасувати")
-async def cancel(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Дію скасовано. Напишіть `створити` для початку.")
-
-# ================= START OFFER =================
-@dp.message(F.text.lower() == "створити")
-async def create_offer(message: Message, state: FSMContext):
-    if await state.get_state() is not None:
-        await message.answer("⚠️ Завершіть або напишіть `скасувати`.")
-        return
-    await message.answer("Категорія:")
     await state.set_state(OfferFSM.category)
 
-# ================= OFFER FSM =================
-@dp.message(OfferFSM.category)
-async def s1(m,s): await s.update_data(category=m.text); await m.answer("Тип житла:"); await s.set_state(OfferFSM.property_type)
+# ================= CATEGORY =================
+@dp.callback_query(F.data.startswith("cat_"))
+async def set_category(call: CallbackQuery, state: FSMContext):
+    category = "Оренда" if call.data == "cat_rent" else "Продаж"
+    await state.update_data(category=category)
+    await call.message.answer("Тип житла:")
+    await call.message.edit_reply_markup(None)
+    await state.set_state(OfferFSM.property_type)
+    await call.answer()
 
+# ================= OFFER FSM (TEXT) =================
 @dp.message(OfferFSM.property_type)
 async def s2(m,s): await s.update_data(property_type=m.text); await m.answer("Вулиця:"); await s.set_state(OfferFSM.street)
 
@@ -112,7 +112,7 @@ async def s3(m,s): await s.update_data(street=m.text); await m.answer("Міст�
 async def s4(m,s): await s.update_data(city=m.text); await m.answer("Район:"); await s.set_state(OfferFSM.district)
 
 @dp.message(OfferFSM.district)
-async def s5(m,s): await s.update_data(district=m.text); await m.answer("Переваги:"); await s.set_state(OfferFSM.advantages)
+async def s5(m,s): await s.update_data(district=m.text); await m.answer("Переваги житла:"); await s.set_state(OfferFSM.advantages)
 
 @dp.message(OfferFSM.advantages)
 async def s6(m,s): await s.update_data(advantages=m.text); await m.answer("Ціна:"); await s.set_state(OfferFSM.rent)
@@ -133,12 +133,13 @@ async def s10(m,s): await s.update_data(parking=m.text); await m.answer("Зас�
 async def s11(m,s): await s.update_data(move_in=m.text); await m.answer("Огляди від:"); await s.set_state(OfferFSM.viewing)
 
 @dp.message(OfferFSM.viewing)
-async def s12(m,s): await s.update_data(viewing=m.text); await m.answer("Маклер:"); await s.set_state(OfferFSM.broker)
+async def s12(m,s): await s.update_data(viewing=m.text); await m.answer("Маклер (нік):"); await s.set_state(OfferFSM.broker)
 
 @dp.message(OfferFSM.broker)
 async def s13(m,s):
     await s.update_data(broker=m.text, photos=[])
-    await m.answer("Надішліть фото (можна кілька). Коли завершили — напишіть будь-що.")
+    await m.answer("Надішліть фото (можна кілька). Коли завершили — напишіть будь-який текст.")
+    await s.set_state(OfferFSM.photos)
 
 @dp.message(OfferFSM.photos, F.photo)
 async def s14(m,s):
@@ -158,7 +159,7 @@ async def finish(m,s):
     ]
     await bot.send_media_group(GROUP_CHAT_ID, media)
 
-    await m.answer("✅ Пропозицію опубліковано. Напишіть `створити` для нової.")
+    await m.answer("✅ Пропозицію опубліковано.\n\nНапишіть /start для нової.")
     await s.clear()
 
 # ================= MAIN =================
