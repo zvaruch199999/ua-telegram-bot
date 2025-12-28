@@ -1,46 +1,22 @@
-from openpyxl import Workbook, load_workbook
-from datetime import datetime
+import csv
 import os
+import aiosqlite
 
-FILE = "data/offers.xlsx"
+async def export_offers_csv(db_path: str, out_path: str):
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-HEADERS = [
-    "ID", "Дата створення", "Категорія", "Тип", "Вулиця", "Місто", "Район",
-    "Переваги", "Оренда", "Депозит", "Комісія", "Паркінг",
-    "Заселення", "Огляди", "Маклер", "Статус",
-    "Хто знайшов нерухомість", "Хто знайшов клієнта",
-    "Дата контракту", "Сума провізії", "Оплати",
-    "Клієнт", "ПМЖ", "Контакт"
-]
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("""
+            SELECT id, created_at, created_by_username, broker, status,
+                   category, housing_type, street, city, district,
+                   rent, deposit, commission, parking, move_in_from, viewings_from, advantages
+            FROM offers
+            ORDER BY id DESC
+        """)
+        rows = await cur.fetchall()
+        headers = [d[0] for d in cur.description]
 
-def init_excel():
-    if not os.path.exists(FILE):
-        wb = Workbook()
-        ws = wb.active
-        ws.append(HEADERS)
-        wb.save(FILE)
-
-def add_offer(data: dict):
-    wb = load_workbook(FILE)
-    ws = wb.active
-    row_id = ws.max_row
-    ws.append([
-        row_id,
-        datetime.now().strftime("%Y-%m-%d"),
-        data["category"],
-        data["type"],
-        data["street"],
-        data["city"],
-        data["district"],
-        data["advantages"],
-        data["rent"],
-        data["deposit"],
-        data["commission"],
-        data["parking"],
-        data["move_in"],
-        data["viewing"],
-        data["broker"],
-        "Активна"
-    ])
-    wb.save(FILE)
-    return row_id
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(headers)
+        w.writerows(rows)
