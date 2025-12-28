@@ -1,49 +1,42 @@
-from aiogram.types import (
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton
-)
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ---- Reply keyboard тільки для фото-етапу ----
-def photos_done_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="✅ Готово")]],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
+def kb_category() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏷 Оренда", callback_data="cat:Оренда"),
+         InlineKeyboardButton(text="🏷 Продаж", callback_data="cat:Продаж")],
+        [InlineKeyboardButton(text="➡️ Інше (ввести)", callback_data="cat:__custom__")],
+    ])
 
-# ---- Inline ----
-def category_kb() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🏠 Оренда", callback_data="cat:Оренда")
-    kb.button(text="🏡 Продаж", callback_data="cat:Продаж")
-    kb.button(text="✍️ Інше", callback_data="cat:__other__")
-    kb.adjust(2, 1)
-    return kb.as_markup()
+def kb_housing_type() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Квартира", callback_data="type:Квартира"),
+         InlineKeyboardButton(text="🚪 Кімната", callback_data="type:Кімната")],
+        [InlineKeyboardButton(text="🏡 Будинок", callback_data="type:Будинок"),
+         InlineKeyboardButton(text="🏢 Офіс", callback_data="type:Офіс")],
+        [InlineKeyboardButton(text="➡️ Інше (ввести)", callback_data="type:__custom__")],
+    ])
 
-def housing_type_kb() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🛏 Кімната", callback_data="ht:Кімната")
-    kb.button(text="🏢 Квартира", callback_data="ht:Квартира")
-    kb.button(text="🏠 Будинок", callback_data="ht:Будинок")
-    kb.button(text="🏬 Комерція", callback_data="ht:Комерція")
-    kb.button(text="✍️ Інше", callback_data="ht:__other__")
-    kb.adjust(2, 2, 1)
-    return kb.as_markup()
+def kb_done_photos(number: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Готово", callback_data=f"photos_done:{number}")]
+    ])
 
-def preview_kb(offer_id: int) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✅ Опублікувати", callback_data=f"pub:{offer_id}")
-    kb.button(text="✏️ Редагувати", callback_data=f"edit:{offer_id}")
-    kb.button(text="❌ Скасувати", callback_data=f"cancel:{offer_id}")
-    kb.adjust(1, 2)
-    return kb.as_markup()
+def kb_preview_actions(number: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Опублікувати", callback_data=f"publish:{number}")],
+        [InlineKeyboardButton(text="✏️ Редагувати", callback_data=f"edit:{number}"),
+         InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel:{number}")]
+    ])
 
-def status_kb(offer_id: int) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🟢 Актуально", callback_data=f"st:{offer_id}:ACTIVE")
-    kb.button(text="🟡 Резерв", callback_data=f"st:{offer_id}:RESERVED")
-    kb.button(text="🔴 Знято", callback_data=f"st:{offer_id}:REMOVED")
-    kb.button(text="✅ Закрито", callback_data=f"st:{offer_id}:CLOSED")
-    kb.adjust(2, 2)
-    return kb.as_markup()
+def kb_status(number: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🟢 Актуально", callback_data=f"st:{number}:ACTIVE"),
+         InlineKeyboardButton(text="🟡 Резерв", callback_data=f"st:{number}:RESERVE")],
+        [InlineKeyboardButton(text="⚫️ Знято", callback_data=f"st:{number}:WITHDRAWN"),
+         InlineKeyboardButton(text="✅ Угода закрита", callback_data=f"st:{number}:CLOSED")],
+    ])
+
+def kb_back_to_preview(number: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад до превʼю", callback_data=f"preview:{number}")]
+    ])
