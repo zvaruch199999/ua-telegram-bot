@@ -1,13 +1,15 @@
 import asyncio
 import logging
+import os
 from datetime import date
+from tempfile import NamedTemporaryFile
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
-    Message, CallbackQuery, InputMediaPhoto
+    Message, CallbackQuery, InputMediaPhoto, FSInputFile
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -15,14 +17,16 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN, GROUP_CHAT_ID, DB_PATH
 from states import OfferForm
 from keyboards import (
-    main_menu, category_kb, living_type_kb, preview_kb,
+    category_kb, living_type_kb, preview_kb,
     edit_fields_kb, status_kb
 )
 from database import (
     init_db, create_offer, get_offer, update_offer_fields, change_status,
-    set_group_message, build_stats_text,
+    set_group_message, build_stats_text, list_offers_for_export,
     STATUS_ACTIVE, STATUS_RESERVED, STATUS_CLOSED, STATUS_REMOVED
 )
+
+from openpyxl import Workbook
 
 logging.basicConfig(level=logging.INFO)
 router = Router()
@@ -45,7 +49,6 @@ def status_label(status: str) -> str:
 
 
 def build_offer_text(oid: int, data: dict) -> str:
-    # без слова "неактуально" взагалі
     cat = data.get("category") or "—"
     lt = data.get("living_type") or "—"
     street = data.get("street") or "—"
@@ -82,24 +85,35 @@ def build_offer_text(oid: int, data: dict) -> str:
 async def send_album(chat_id: int, bot: Bot, photo_ids: list[str]):
     if not photo_ids:
         return
-    media = [InputMediaPhoto(media=pid) for pid in photo_ids[:10]]  # Telegram обмеження
+    media = [InputMediaPhoto(media=pid) for pid in photo_ids[:10]]
     await bot.send_media_group(chat_id=chat_id, media=media)
 
 
+# ✅ без меню-кнопок. Просто текст.
 @router.message(CommandStart())
 async def start_cmd(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "Привіт! Обери дію нижче 👇",
-        reply_markup=main_menu()
+        "✅ Бот працює.\n\n"
+        "Команди:\n"
+        "➕ /create — створити пропозицію\n"
+        "📊 /stats — статистика\n"
+        "📤 /export — експорт Excel\n"
+        "❓ /help — допомога\n"
+        "❌ /cancel — скасувати"
     )
 
 
-@router.callback_query(F.data == "stats")
-async def stats_cb(call: CallbackQuery):
-    text = await build_stats_text(DB_PATH, date.today())
-    await call.message.answer(text)
-    await call.answer()
+@router.message(Command("help"))
+async def help_cmd(message: Message):
+    await message.answer(
+        "❓ <b>Допомога</b>\n\n"
+        "➕ /create — створення пропозиції\n"
+        "Під час додавання фото: /done\n"
+        "📊 /stats — статистика день/місяць/рік + по маклерам\n"
+        "📤 /export — завантажити Excel (.xlsx)\n"
+        "❌ /cancel — скасувати поточний крок"
+    )
 
 
 @router.message(Command("stats"))
@@ -108,12 +122,11 @@ async def stats_cmd(message: Message):
     await message.answer(text)
 
 
-@router.callback_query(F.data == "create_offer")
-async def create_offer_cb(call: CallbackQuery, state: FSMContext):
+@router.message(Command("create"))
+async def create_cmd(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(OfferForm.category)
-    await call.message.answer("🏷️ Обери категорію:", reply_markup=category_kb())
-    await call.answer()
+    await message.answer("🏷️ Обери категорію:", reply_markup=category_kb())
 
 
 @router.callback_query(F.data.startswith("cat:"))
@@ -122,18 +135,40 @@ async def category_chosen(call: CallbackQuery, state: FSMContext):
     category = "Оренда" if val == "rent" else "Продаж"
     await state.update_data(category=category)
     await state.set_state(OfferForm.living_type)
-    await call.message.answer("🏠 Обери тип житла:", reply_markup=living_type_kb())
+    await call.message.answer(
+        "🏠 Обери тип житла кнопкою або напиши свій варіант текстом:",
+        reply_markup=living_type_kb()
+    )
     await call.answer()
 
 
+# ✅ Тип житла: кнопки
 @router.callback_query(F.data.startswith("type:"))
 async def type_chosen(call: CallbackQuery, state: FSMContext):
     val = call.data.split(":", 1)[1]
+    if val == "custom":
+        # просто просимо написати текст
+        await call.message.answer("✍️ Напиши свій варіант типу житла (наприклад: Студія):")
+        await call.answer()
+        return
+
     mapping = {"room": "Кімната", "flat": "Квартира", "house": "Будинок"}
     await state.update_data(living_type=mapping.get(val, val))
     await state.set_state(OfferForm.street)
     await call.message.answer("📌 Вулиця (наприклад: Грабова):")
     await call.answer()
+
+
+# ✅ Тип житла: якщо людина написала текстом (бо нема в списку)
+@router.message(OfferForm.living_type)
+async def living_type_text(message: Message, state: FSMContext):
+    txt = (message.text or "").strip()
+    if not txt:
+        await message.answer("Напиши тип житла текстом або натисни кнопку.")
+        return
+    await state.update_data(living_type=txt)
+    await state.set_state(OfferForm.street)
+    await message.answer("📌 Вулиця (наприклад: Грабова):")
 
 
 @router.message(OfferForm.street)
@@ -211,32 +246,7 @@ async def broker_step(message: Message, state: FSMContext):
     await state.update_data(broker=message.text.strip())
     await state.update_data(photos=[])
     await state.set_state(OfferForm.photos)
-    await message.answer("📸 Надішли фото. Коли закінчиш — напиши команду: /done")
-
-
-@router.message(Command("done"))
-async def done_photos(message: Message, state: FSMContext, bot: Bot):
-    if await state.get_state() != OfferForm.photos.state:
-        return
-
-    data = await state.get_data()
-    photos = data.get("photos", [])
-    if not photos:
-        await message.answer("⚠️ Немає фото. Надішли хоча б 1 фото, або напиши /cancel")
-        return
-
-    data["status"] = STATUS_ACTIVE
-
-    # PREVIEW в боті: альбом + картка + кнопки publish/edit
-    await send_album(message.chat.id, bot, photos)
-
-    preview_text = (
-        "👇 <b>Це фінальний вигляд пропозиції (перед публікацією)</b>\n\n"
-        + build_offer_text(0, data).replace("#0000", "#—")
-    )
-    msg = await message.answer(preview_text, reply_markup=preview_kb())
-    await state.update_data(preview_msg_id=msg.message_id)
-    await state.set_state(OfferForm.preview)
+    await message.answer("📸 Надішли фото. Коли закінчиш — напиши: /done")
 
 
 @router.message(OfferForm.photos)
@@ -252,19 +262,30 @@ async def photo_collector(message: Message, state: FSMContext):
     await message.answer(f"📷 Фото додано ({len(photos)})")
 
 
-@router.callback_query(F.data == "edit")
-async def edit_cb(call: CallbackQuery, state: FSMContext):
-    if await state.get_state() != OfferForm.preview.state:
-        await call.answer("Спочатку створи пропозицію.")
+@router.message(Command("done"))
+async def done_photos(message: Message, state: FSMContext, bot: Bot):
+    if await state.get_state() != OfferForm.photos.state:
         return
-    await state.set_state(OfferForm.edit_choose)
-    await call.message.answer(
-        "✏️ <b>Редагування</b>\nОбери поле кнопкою нижче (або можеш написати цифру 2–14):",
-        reply_markup=edit_fields_kb()
+
+    data = await state.get_data()
+    photos = data.get("photos", [])
+    if not photos:
+        await message.answer("⚠️ Немає фото. Надішли хоча б 1 фото або /cancel")
+        return
+
+    data["status"] = STATUS_ACTIVE
+
+    await send_album(message.chat.id, bot, photos)
+
+    preview_text = (
+        "👇 <b>Фінальний вигляд (перед публікацією)</b>\n\n"
+        + build_offer_text(0, data).replace("#0000", "#—")
     )
-    await call.answer()
+    await message.answer(preview_text, reply_markup=preview_kb())
+    await state.set_state(OfferForm.preview)
 
 
+# ---- Редагування ----
 FIELD_MAP_BY_NUMBER = {
     "2": "category",
     "3": "living_type",
@@ -282,16 +303,28 @@ FIELD_MAP_BY_NUMBER = {
 }
 
 
+@router.callback_query(F.data == "edit")
+async def edit_cb(call: CallbackQuery, state: FSMContext):
+    if await state.get_state() != OfferForm.preview.state:
+        await call.answer("Спочатку створи пропозицію.")
+        return
+    await state.set_state(OfferForm.edit_choose)
+    await call.message.answer(
+        "✏️ <b>Редагування</b>\nОбери поле кнопкою або напиши цифру 2–14:",
+        reply_markup=edit_fields_kb()
+    )
+    await call.answer()
+
+
 @router.message(OfferForm.edit_choose)
 async def edit_choose_text(message: Message, state: FSMContext):
-    # якщо користувач вводить цифру (як у твоєму скріні)
-    key = FIELD_MAP_BY_NUMBER.get(message.text.strip())
+    key = FIELD_MAP_BY_NUMBER.get((message.text or "").strip())
     if not key:
         await message.answer("Напиши цифру 2–14 або натисни кнопку.")
         return
     await state.update_data(edit_field=key)
     await state.set_state(OfferForm.edit_value)
-    await message.answer("Введи нове значення для цього пункту:")
+    await message.answer("Введи нове значення:")
 
 
 @router.callback_query(F.data.startswith("editfield:"))
@@ -302,14 +335,14 @@ async def edit_choose_btn(call: CallbackQuery, state: FSMContext):
     key = call.data.split(":", 1)[1]
     await state.update_data(edit_field=key)
     await state.set_state(OfferForm.edit_value)
-    await call.message.answer("Введи нове значення для цього пункту:")
+    await call.message.answer("Введи нове значення:")
     await call.answer()
 
 
 @router.callback_query(F.data == "back_to_preview")
 async def back_to_preview(call: CallbackQuery, state: FSMContext):
     await state.set_state(OfferForm.preview)
-    await call.message.answer("Повернув у превʼю. Можеш Опублікувати або ще Редагувати.", reply_markup=preview_kb())
+    await call.message.answer("Повернув у превʼю.", reply_markup=preview_kb())
     await call.answer()
 
 
@@ -322,19 +355,18 @@ async def edit_value_step(message: Message, state: FSMContext):
         await message.answer("Помилка редагування. Повернув у превʼю.", reply_markup=preview_kb())
         return
 
-    await state.update_data(**{key: message.text.strip()})
+    await state.update_data(**{key: (message.text or "").strip()})
     await state.set_state(OfferForm.preview)
 
     new_data = await state.get_data()
     new_data["status"] = STATUS_ACTIVE
-
-    preview_text = (
-        "✅ <b>Оновлено!</b>\n\n"
-        + build_offer_text(0, new_data).replace("#0000", "#—")
+    await message.answer(
+        "✅ <b>Оновлено!</b>\n\n" + build_offer_text(0, new_data).replace("#0000", "#—"),
+        reply_markup=preview_kb()
     )
-    await message.answer(preview_text, reply_markup=preview_kb())
 
 
+# ---- Публікація ----
 @router.callback_query(F.data == "publish")
 async def publish_cb(call: CallbackQuery, state: FSMContext, bot: Bot):
     if await state.get_state() != OfferForm.preview.state:
@@ -344,25 +376,21 @@ async def publish_cb(call: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
     photos = data.get("photos", [])
     if not photos:
-        await call.message.answer("⚠️ Немає фото. Повернись і додай фото.")
+        await call.message.answer("⚠️ Немає фото.")
         await call.answer()
         return
 
     if GROUP_CHAT_ID is None:
-        await call.message.answer("⚠️ Не задано GROUP_CHAT_ID у змінних Railway. Додай і перезапусти.")
+        await call.message.answer("⚠️ Не задано GROUP_CHAT_ID у Railway Variables.")
         await call.answer()
         return
 
     data["status"] = STATUS_ACTIVE
 
-    # створюємо офер в БД
     oid = await create_offer(DB_PATH, data)
 
-    # 1) в групу альбом
     await send_album(GROUP_CHAT_ID, bot, photos)
-
-    # 2) в групу текст з кнопками статусів (кнопки НЕ пропадають)
-    text = build_offer_text(oid, {**data, "status": STATUS_ACTIVE})
+    text = build_offer_text(oid, data)
     msg = await bot.send_message(
         chat_id=GROUP_CHAT_ID,
         text=text,
@@ -378,13 +406,11 @@ async def publish_cb(call: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("status:"))
 async def status_change_cb(call: CallbackQuery, bot: Bot):
-    # працює в групі
-    # status:<offer_id>:<status>
     try:
         _, oid_str, new_status = call.data.split(":")
         oid = int(oid_str)
     except Exception:
-        await call.answer("Помилка даних кнопки.")
+        await call.answer("Помилка кнопки.")
         return
 
     offer = await get_offer(DB_PATH, oid)
@@ -397,7 +423,6 @@ async def status_change_cb(call: CallbackQuery, bot: Bot):
 
     await change_status(DB_PATH, oid, new_status, changed_by)
 
-    # оновлюємо текст повідомлення, кнопки залишаємо
     updated = await get_offer(DB_PATH, oid)
     text = build_offer_text(oid, updated)
 
@@ -410,7 +435,6 @@ async def status_change_cb(call: CallbackQuery, bot: Bot):
             disable_web_page_preview=True
         )
     except Exception:
-        # якщо не можна відредагувати (інколи), просто скажемо що ок
         pass
 
     await call.answer("✅ Статус оновлено")
@@ -419,14 +443,64 @@ async def status_change_cb(call: CallbackQuery, bot: Bot):
 @router.callback_query(F.data == "cancel")
 async def cancel_cb(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    await call.message.answer("❌ Скасовано. /start")
+    await call.message.answer("❌ Скасовано. /create")
     await call.answer()
 
 
 @router.message(Command("cancel"))
 async def cancel_cmd(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Скасовано. /start")
+    await message.answer("❌ Скасовано. /create")
+
+
+# ✅ Excel export (опціонально)
+@router.message(Command("export"))
+async def export_cmd(message: Message):
+    rows = await list_offers_for_export(DB_PATH)
+    if not rows:
+        await message.answer("Поки що немає пропозицій для експорту.")
+        return
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Offers"
+
+    headers = [
+        "ID", "Created At", "Broker", "Status", "Category", "Living Type",
+        "Street", "City", "District", "Advantages", "Price", "Deposit",
+        "Commission", "Parking", "Move-in", "Viewings"
+    ]
+    ws.append(headers)
+
+    for r in rows:
+        ws.append([
+            r.get("id"),
+            r.get("created_at"),
+            r.get("broker"),
+            r.get("status"),
+            r.get("category"),
+            r.get("living_type"),
+            r.get("street"),
+            r.get("city"),
+            r.get("district"),
+            r.get("advantages"),
+            r.get("price"),
+            r.get("deposit"),
+            r.get("commission"),
+            r.get("parking"),
+            r.get("move_in"),
+            r.get("viewings"),
+        ])
+
+    with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        path = tmp.name
+    wb.save(path)
+
+    await message.answer_document(FSInputFile(path), caption="📤 Експорт пропозицій (.xlsx)")
+    try:
+        os.remove(path)
+    except Exception:
+        pass
 
 
 async def main():
