@@ -1,16 +1,19 @@
 import os
 
-def _req(name: str) -> str:
-    val = os.getenv(name)
-    if not val:
-        raise RuntimeError(f"{name} не заданий (Railway Variables)")
-    return val
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-BOT_TOKEN = _req("BOT_TOKEN")
+# ВАЖЛИВО: саме GROUP_CHAT_ID (а не GROUP_ID)
+GROUP_CHAT_ID_RAW = os.getenv("GROUP_CHAT_ID", "").strip()
 
-# В Railway змінні: GROUP_CHAT_ID = -100xxxxxxxxxx
-GROUP_CHAT_ID = int(_req("GROUP_CHAT_ID"))
+DB_PATH = os.getenv("DB_PATH", "data/bot.db").strip()
 
-# (опційно) якщо хочеш обмежити доступ тільки собі:
-# ADMIN_USER_IDS="1057216609,123..."
-ADMIN_USER_IDS = [int(x) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip().isdigit()]
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN не заданий (Environment Variables).")
+
+if not GROUP_CHAT_ID_RAW:
+    raise RuntimeError("GROUP_CHAT_ID не заданий (Environment Variables).")
+
+try:
+    GROUP_CHAT_ID = int(GROUP_CHAT_ID_RAW)
+except ValueError:
+    raise RuntimeError("GROUP_CHAT_ID має бути числом (наприклад: -1001234567890).")
