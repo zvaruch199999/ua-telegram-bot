@@ -1,13 +1,10 @@
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID_RAW = os.getenv("GROUP_ID")
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+BOT_TOKEN = (os.getenv("BOT_TOKEN") or "").strip()
 
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set")
+# ВАЖЛИВО: ти казав що маєш GROUP_CHAT_ID
+# Підтримую обидва варіанти (щоб не падало): GROUP_CHAT_ID або GROUP_ID
+_group = os.getenv("GROUP_CHAT_ID") or os.getenv("GROUP_ID") or ""
+GROUP_CHAT_ID = int(_group) if _group.strip().lstrip("-").isdigit() else None
 
-if not GROUP_ID_RAW:
-    raise RuntimeError("GROUP_ID is not set")
-
-GROUP_ID = int(GROUP_ID_RAW)
+DB_PATH = os.getenv("DB_PATH", "data/bot.db")
