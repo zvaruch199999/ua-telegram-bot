@@ -1,7 +1,7 @@
 import json
 import aiosqlite
 from datetime import datetime, date
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 
 STATUS_ACTIVE = "active"
 STATUS_RESERVED = "reserved"
@@ -142,7 +142,6 @@ def _month_range(d: date) -> Tuple[str, str]:
         end = datetime(d.year + 1, 1, 1, 0, 0, 0)
     else:
         end = datetime(d.year, d.month + 1, 1, 0, 0, 0)
-    # end exclusive, але ок
     return (start.isoformat(timespec="seconds"), end.isoformat(timespec="seconds"))
 
 
@@ -233,3 +232,17 @@ async def build_stats_text(db_path: str, today: date) -> str:
         + fmt_brokers(f"Рік ({today.strftime('%Y')})", year_b)
     )
     return text
+
+
+# ✅ Для /export (Excel)
+async def list_offers_for_export(db_path: str) -> List[Dict[str, Any]]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("""
+        SELECT id, created_at, broker, status, category, living_type, street, city, district,
+               advantages, price, deposit, commission, parking, move_in, viewings
+        FROM offers
+        ORDER BY id DESC
+        """)
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
