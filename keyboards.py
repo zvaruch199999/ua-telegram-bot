@@ -1,13 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
-def main_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Створити пропозицію", callback_data="create_offer")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")]
-    ])
-
-
 def category_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🏷️ Оренда", callback_data="cat:rent"),
@@ -21,6 +14,7 @@ def living_type_kb():
         [InlineKeyboardButton(text="🏠 Кімната", callback_data="type:room"),
          InlineKeyboardButton(text="🏢 Квартира", callback_data="type:flat")],
         [InlineKeyboardButton(text="🏡 Будинок", callback_data="type:house")],
+        [InlineKeyboardButton(text="✍️ Напишу свій варіант", callback_data="type:custom")],
         [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel")]
     ])
 
@@ -34,15 +28,14 @@ def preview_kb():
 
 
 def edit_fields_kb():
-    # Кнопки редагування 2–14 (як у твоєму списку)
     rows = [
         [InlineKeyboardButton(text="2. Категорія", callback_data="editfield:category"),
-         InlineKeyboardButton(text="3. Проживання", callback_data="editfield:living_type")],
+         InlineKeyboardButton(text="3. Тип житла", callback_data="editfield:living_type")],
         [InlineKeyboardButton(text="4. Вулиця", callback_data="editfield:street"),
          InlineKeyboardButton(text="5. Місто", callback_data="editfield:city")],
         [InlineKeyboardButton(text="6. Район", callback_data="editfield:district"),
          InlineKeyboardButton(text="7. Переваги", callback_data="editfield:advantages")],
-        [InlineKeyboardButton(text="8. Оренда/Ціна", callback_data="editfield:price"),
+        [InlineKeyboardButton(text="8. Ціна", callback_data="editfield:price"),
          InlineKeyboardButton(text="9. Депозит", callback_data="editfield:deposit")],
         [InlineKeyboardButton(text="10. Комісія", callback_data="editfield:commission"),
          InlineKeyboardButton(text="11. Паркінг", callback_data="editfield:parking")],
