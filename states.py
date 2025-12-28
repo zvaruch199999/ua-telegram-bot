@@ -1,31 +1,22 @@
 from aiogram.fsm.state import StatesGroup, State
 
-class OfferFSM(StatesGroup):
+
+class OfferForm(StatesGroup):
     category = State()
-    property_type = State()
+    living_type = State()
     street = State()
     city = State()
     district = State()
     advantages = State()
-    rent = State()
+    price = State()
     deposit = State()
     commission = State()
     parking = State()
     move_in = State()
-    viewing = State()
+    viewings = State()
     broker = State()
     photos = State()
-    summary = State()
 
-class CloseDealFSM(StatesGroup):
-    offer_id = State()
-    found_property = State()
-    found_client = State()
-    contract_date = State()
-    commission_sum = State()
-    payments_count = State()
-    payments_details = State()
-    client_name = State()
-    client_residence = State()
-    client_contact = State()
-    summary = State()
+    preview = State()
+    edit_choose = State()
+    edit_value = State()
