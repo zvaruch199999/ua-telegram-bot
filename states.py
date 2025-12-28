@@ -12,11 +12,12 @@ class CreateOffer(StatesGroup):
     deposit = State()
     commission = State()
     parking = State()
-    settlement_from = State()
-    viewings_from = State()
+    move_in = State()
+    view_from = State()
+    broker = State()
     photos = State()
-    preview = State()
 
 class EditOffer(StatesGroup):
-    pick_field = State()
-    new_value = State()
+    choose_field_num = State()
+    enter_value = State()
+    housing_type_custom = State()
