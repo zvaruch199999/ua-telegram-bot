@@ -3,16 +3,20 @@
 # ✅ Створення пропозиції + фото (альбом)
 # ✅ Попередній перегляд: Публікувати / Редагувати / Скасувати
 # ✅ Публікація в групу: альбом + повідомлення з кнопками статусу (під пропозицією)
-# ✅ Статуси: 🟢 Актуально / 🟡 Резерв / ⚫️ Знято / ✅ Угода закрита
+# ✅ Статуси: ❔ Невідома / 🟢 Актуально / 🟡 Резерв / ⚫️ Знято / ✅ Угода закрита
 # ✅ Статистика (день/місяць/рік): загалом + по маклерах (кількість кожного статусу)
-# ✅ /export (Excel) — генерує файл і надсилає в чат (нічого іншого не ламає)
+# ✅ /export (Excel) — генерує файл і надсилає в чат
+#
+# 🔧 Правки за твоїм запитом:
+# 1) При створенні пропозиції ставимо статус: ❔ Невідома (і одразу рахуємо в статистику)
+# 2) Паркінг: можна обрати кнопкою або вписати текстом
 
 import os
 import json
 import asyncio
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, Tuple
 
 from aiogram import Bot, Dispatcher, Router, F, types
 from aiogram.filters import Command
@@ -23,7 +27,6 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
 from aiogram.types import FSInputFile
 
 try:
@@ -36,14 +39,11 @@ except ImportError:
 # ENV / CONFIG
 # =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-
-# В тебе може бути GROUP_CHAT_ID — беремо його в першу чергу.
 GROUP_CHAT_ID_RAW = (os.getenv("GROUP_CHAT_ID") or os.getenv("GROUP_ID") or "").strip()
 
 DATA_DIR = os.getenv("DATA_DIR", "data")
 DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "database.db"))
 
-# Опційно: список дозволених user_id через кому (якщо пусто — доступ усім)
 ALLOWED_USER_IDS_RAW = (os.getenv("ALLOWED_USER_IDS") or "").strip()
 ALLOWED_USER_IDS = set()
 if ALLOWED_USER_IDS_RAW:
@@ -52,16 +52,17 @@ if ALLOWED_USER_IDS_RAW:
         if part.isdigit():
             ALLOWED_USER_IDS.add(int(part))
 
-APP_TZ = timezone.utc  # якщо треба, постав Europe/Bratislava через pytz/zoneinfo (але не обов'язково)
+APP_TZ = timezone.utc  # за потреби можна змінити
 
 
 STATUS = {
+    "unknown": "❔ Невідома",
     "active": "🟢 Актуально",
     "reserve": "🟡 Резерв",
     "removed": "⚫️ Знято",
     "closed": "✅ Угода закрита",
 }
-STATUS_ORDER = ["active", "reserve", "removed", "closed"]
+STATUS_ORDER = ["unknown", "active", "reserve", "removed", "closed"]
 
 
 # =========================
@@ -141,37 +142,6 @@ def next_seq() -> int:
     return int(row["next_seq"])
 
 
-def create_offer(broker_username: str, broker_user_id: int) -> int:
-    seq = next_seq()
-    con = db_conn()
-    cur = con.cursor()
-    cur.execute(
-        """
-        INSERT INTO offers (
-            seq, created_at, category, housing_type, street, city, district, advantages,
-            rent, deposit, commission, parking, move_in_from, viewings_from,
-            broker_username, broker_user_id, photos_json, current_status, is_published
-        ) VALUES (?, ?, '', '', '', '', '', '', '', '', '', '', '', '', ?, ?, '[]', ?, 0);
-        """,
-        (seq, now_iso(), broker_username, broker_user_id, "active"),
-    )
-    con.commit()
-    offer_id = cur.lastrowid
-    con.close()
-
-    # Лог події "active" не пишемо при створенні, щоб статистика рахувала тільки реальні натискання статусів.
-    return offer_id
-
-
-def get_offer(offer_id: int) -> Optional[sqlite3.Row]:
-    con = db_conn()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM offers WHERE id = ?;", (offer_id,))
-    row = cur.fetchone()
-    con.close()
-    return row
-
-
 def update_offer(offer_id: int, **fields):
     if not fields:
         return
@@ -185,21 +155,19 @@ def update_offer(offer_id: int, **fields):
     con.close()
 
 
-def add_photo(offer_id: int, file_id: str):
-    offer = get_offer(offer_id)
-    if not offer:
-        return
-    try:
-        photos = json.loads(offer["photos_json"] or "[]")
-    except Exception:
-        photos = []
-    photos.append(file_id)
-    update_offer(offer_id, photos_json=json.dumps(photos, ensure_ascii=False))
+def get_offer(offer_id: int) -> Optional[sqlite3.Row]:
+    con = db_conn()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM offers WHERE id = ?;", (offer_id,))
+    row = cur.fetchone()
+    con.close()
+    return row
 
 
 def set_status(offer_id: int, status: str, username: str, user_id: int):
     if status not in STATUS:
         return
+
     update_offer(offer_id, current_status=status)
 
     con = db_conn()
@@ -210,6 +178,48 @@ def set_status(offer_id: int, status: str, username: str, user_id: int):
     )
     con.commit()
     con.close()
+
+
+def create_offer(broker_username: str, broker_user_id: int) -> int:
+    """
+    Створює пропозицію зі статусом ❔ Невідома
+    і одразу записує подію в status_events (для статистики).
+    """
+    seq = next_seq()
+    created = now_iso()
+
+    con = db_conn()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO offers (
+            seq, created_at, category, housing_type, street, city, district, advantages,
+            rent, deposit, commission, parking, move_in_from, viewings_from,
+            broker_username, broker_user_id, photos_json, current_status, is_published
+        ) VALUES (?, ?, '', '', '', '', '', '', '', '', '', '', '', '', ?, ?, '[]', ?, 0);
+        """,
+        (seq, created, broker_username, broker_user_id, "unknown"),
+    )
+    con.commit()
+    offer_id = cur.lastrowid
+    con.close()
+
+    # ✅ одразу рахуємо як "Невідома" в статистику
+    set_status(offer_id, "unknown", username=broker_username, user_id=broker_user_id)
+
+    return offer_id
+
+
+def add_photo(offer_id: int, file_id: str):
+    offer = get_offer(offer_id)
+    if not offer:
+        return
+    try:
+        photos = json.loads(offer["photos_json"] or "[]")
+    except Exception:
+        photos = []
+    photos.append(file_id)
+    update_offer(offer_id, photos_json=json.dumps(photos, ensure_ascii=False))
 
 
 # =========================
@@ -231,8 +241,8 @@ def offer_title(seq: int) -> str:
 
 def offer_text(offer: sqlite3.Row) -> str:
     seq = int(offer["seq"])
-    status = offer["current_status"] or "active"
-    st = STATUS.get(status, "🟢 Актуально")
+    status = (offer["current_status"] or "unknown").strip()
+    st = STATUS.get(status, "❔ Невідома")
 
     def line(emoji: str, label: str, key: str):
         val = offer[key] or "—"
@@ -296,6 +306,7 @@ def kb_housing_type() -> InlineKeyboardMarkup:
 
 
 def kb_parking() -> InlineKeyboardMarkup:
+    # кнопки лишаємо + дозволяємо текстом у цьому ж кроці
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -327,6 +338,8 @@ def kb_preview_actions() -> InlineKeyboardMarkup:
 
 
 def kb_status_buttons(offer_id: int) -> InlineKeyboardMarkup:
+    # статус "Невідома" не робимо кнопкою — це стартовий стан,
+    # далі маклер переводить у потрібний статус
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -382,7 +395,12 @@ EDIT_FIELDS = [
 
 
 def edit_list_text(seq: int) -> str:
-    lines = [f"✏️ <b>Редагування #{seq:04d}</b>", "Напиши номер пункту 1–13, який хочеш змінити.", "", "<b>Список:</b>"]
+    lines = [
+        f"✏️ <b>Редагування #{seq:04d}</b>",
+        "Напиши номер пункту 1–13, який хочеш змінити.",
+        "",
+        "<b>Список:</b>",
+    ]
     for num, name, _ in EDIT_FIELDS:
         lines.append(f"{num}. {name}")
     return "\n".join(lines)
@@ -524,9 +542,13 @@ async def msg_commission(message: types.Message, state: FSMContext):
     offer_id = data["offer_id"]
     update_offer(offer_id, commission=(message.text or "").strip())
     await state.set_state(OfferFSM.PARKING)
-    await message.answer("🚗 Паркінг:", reply_markup=kb_parking())
+    await message.answer(
+        "🚗 Паркінг: обери кнопкою або <b>напиши текстом</b> (наприклад: 'підземний 50€')",
+        reply_markup=kb_parking(),
+    )
 
 
+# Паркінг кнопкою
 @router.callback_query(OfferFSM.PARKING, F.data.startswith("park:"))
 async def cb_parking(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -537,6 +559,21 @@ async def cb_parking(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(OfferFSM.MOVE_IN_FROM)
     await call.message.answer("📦 Напиши <b>заселення від</b> (наприклад 'вже' або дата):")
     await call.answer()
+
+
+# Паркінг текстом
+@router.message(OfferFSM.PARKING)
+async def msg_parking_text(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    offer_id = data["offer_id"]
+    parking = (message.text or "").strip()
+    if not parking:
+        await message.answer("Напиши текстом паркінг або обери кнопкою.", reply_markup=kb_parking())
+        return
+
+    update_offer(offer_id, parking=parking)
+    await state.set_state(OfferFSM.MOVE_IN_FROM)
+    await message.answer("📦 Напиши <b>заселення від</b> (наприклад 'вже' або дата):")
 
 
 @router.message(OfferFSM.MOVE_IN_FROM)
@@ -584,7 +621,6 @@ async def cb_done_photos(call: types.CallbackQuery, state: FSMContext):
 
 @router.message(OfferFSM.PHOTOS)
 async def msg_photos_other(message: types.Message, state: FSMContext):
-    # якщо людина пише "готово" текстом — теж завершуємо
     t = (message.text or "").strip().lower()
     if t in ("готово", "done"):
         await finish_photos_and_preview(message, state)
@@ -603,7 +639,6 @@ async def finish_photos_and_preview(message: types.Message, state: FSMContext):
 
     await state.set_state(OfferFSM.PREVIEW)
 
-    # Прев'ю: альбом + текст з кнопками
     try:
         photos = json.loads(offer["photos_json"] or "[]")
     except Exception:
@@ -625,9 +660,10 @@ async def cb_cancel(call: types.CallbackQuery, state: FSMContext):
     offer = get_offer(offer_id) if offer_id else None
 
     if offer and int(offer["is_published"] or 0) == 0:
-        # якщо не опубліковано — видаляємо щоб не було "зайвих" пропозицій
+        # якщо скасовано до публікації — прибираємо і offer, і status_events
         con = db_conn()
         cur = con.cursor()
+        cur.execute("DELETE FROM status_events WHERE offer_id = ?;", (offer_id,))
         cur.execute("DELETE FROM offers WHERE id = ?;", (offer_id,))
         con.commit()
         con.close()
@@ -681,7 +717,6 @@ async def cb_publish(call: types.CallbackQuery, state: FSMContext):
         await call.answer()
         return
 
-    # 1) Фото альбомом у групу
     try:
         photos = json.loads(offer["photos_json"] or "[]")
     except Exception:
@@ -691,7 +726,6 @@ async def cb_publish(call: types.CallbackQuery, state: FSMContext):
         media = [types.InputMediaPhoto(media=p) for p in photos[:10]]
         await call.bot.send_media_group(chat_id=group_id, media=media)
 
-    # 2) Текст окремим повідомленням + кнопки статусів
     msg = await call.bot.send_message(
         chat_id=group_id,
         text=offer_text(offer),
@@ -735,7 +769,6 @@ async def msg_edit_choose(message: types.Message, state: FSMContext):
     name, key = field_map[num]
     await state.update_data({"edit_field_key": key, "edit_field_name": name})
 
-    # Для окремих полів показуємо кнопки
     if key == "category":
         await state.set_state(OfferFSM.CATEGORY)
         await message.answer("Обери категорію:", reply_markup=kb_category())
@@ -748,10 +781,9 @@ async def msg_edit_choose(message: types.Message, state: FSMContext):
 
     if key == "parking":
         await state.set_state(OfferFSM.PARKING)
-        await message.answer("🚗 Паркінг:", reply_markup=kb_parking())
+        await message.answer("🚗 Паркінг: обери кнопкою або напиши текстом.", reply_markup=kb_parking())
         return
 
-    # Інакше — текстове значення
     await state.set_state(OfferFSM.EDIT_VALUE)
     await message.answer(f"✏️ Впиши нове значення для <b>{esc(name)}</b>:")
 
@@ -770,14 +802,12 @@ async def msg_edit_value(message: types.Message, state: FSMContext):
 
     val = (message.text or "").strip()
 
-    # Маклер: якщо людина ввела без @ — додаємо
     if key == "broker_username":
         if val and not val.startswith("@"):
             val = f"@{val}"
 
     update_offer(offer_id, **{key: val})
 
-    # Повертаємо в PREVIEW
     offer2 = get_offer(offer_id)
     await state.set_state(OfferFSM.PREVIEW)
 
@@ -788,7 +818,6 @@ async def msg_edit_value(message: types.Message, state: FSMContext):
 # ---------- STATUS BUTTONS (GROUP) ----------
 @router.callback_query(F.data.startswith("st:"))
 async def cb_status(call: types.CallbackQuery):
-    # st:{offer_id}:{status}
     parts = call.data.split(":")
     if len(parts) != 3:
         await call.answer("Помилка", show_alert=False)
@@ -801,7 +830,6 @@ async def cb_status(call: types.CallbackQuery):
         await call.answer("Невірний статус", show_alert=False)
         return
 
-    # Опційний захист доступу
     if not is_allowed(call.from_user.id):
         await call.answer("⛔️ Нема доступу", show_alert=True)
         return
@@ -815,10 +843,8 @@ async def cb_status(call: types.CallbackQuery):
     if username and not username.startswith("@"):
         username = f"@{username}"
 
-    # Запис у БД
     set_status(offer_id, status, username=username, user_id=call.from_user.id)
 
-    # Оновити текст повідомлення в групі (НЕ видаляємо кнопки)
     offer2 = get_offer(offer_id)
     try:
         await call.bot.edit_message_text(
@@ -828,7 +854,6 @@ async def cb_status(call: types.CallbackQuery):
             reply_markup=kb_status_buttons(offer_id),
         )
     except Exception:
-        # якщо не вдалось — хоча б відповісти
         pass
 
     await call.answer("✅ Оновлено", show_alert=False)
@@ -865,7 +890,6 @@ def stats_for_period(period: str) -> Dict[str, Any]:
     con = db_conn()
     cur = con.cursor()
 
-    # Загальні підрахунки по статусах (за подіями)
     cur.execute(
         """
         SELECT status, COUNT(*) as cnt
@@ -882,7 +906,6 @@ def stats_for_period(period: str) -> Dict[str, Any]:
         if st in total:
             total[st] = int(r["cnt"])
 
-    # По маклерах: скільки кожного статусу (за подіями)
     cur.execute(
         """
         SELECT username, status, COUNT(*) as cnt
@@ -923,6 +946,7 @@ def format_stats() -> str:
         t = d["total"]
         return (
             f"<b>{title} ({d['label']})</b>\n"
+            f"{STATUS['unknown']}: {t['unknown']}\n"
             f"{STATUS['active']}: {t['active']}\n"
             f"{STATUS['reserve']}: {t['reserve']}\n"
             f"{STATUS['removed']}: {t['removed']}\n"
@@ -937,6 +961,7 @@ def format_stats() -> str:
 
         for broker, counts in d["per_broker"].items():
             lines.append(f"\n<b>{esc(broker)}</b>")
+            lines.append(f"  {STATUS['unknown']}: {counts['unknown']}")
             lines.append(f"  {STATUS['active']}: {counts['active']}")
             lines.append(f"  {STATUS['reserve']}: {counts['reserve']}")
             lines.append(f"  {STATUS['removed']}: {counts['removed']}")
@@ -1049,7 +1074,7 @@ def export_to_excel(filepath: str, period: str = "all") -> None:
             photos = json.loads(r["photos_json"] or "[]")
         except Exception:
             photos = []
-        st = r["current_status"] or "active"
+        st = (r["current_status"] or "unknown").strip()
         ws.append(
             [
                 r["seq"],
@@ -1099,7 +1124,7 @@ async def cmd_export(message: types.Message):
         return
 
     if Workbook is None:
-        await message.answer("❗️Потрібно додати openpyxl в requirements.txt (openpyxl==3.1.5) і перезапустити деплой.")
+        await message.answer("❗️Додай openpyxl в requirements.txt (openpyxl==3.1.5) і перезапусти деплой.")
         return
 
     args = (message.text or "").split(maxsplit=1)
@@ -1134,7 +1159,6 @@ async def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не заданий")
 
-    # DB init
     init_db()
 
     bot = Bot(
