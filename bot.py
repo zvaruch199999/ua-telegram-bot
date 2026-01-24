@@ -13,14 +13,14 @@
 
 import os
 import json
-import
+import asyncio
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any,
+from typing import Optional, Dict, Any, Tuple
 
 from aiogram import Bot, Dispatcher, Router, F, types
 from aiogram.filters import Command
-from aiogram.fsm.context import
+from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import StatesGroup, State
 
@@ -30,19 +30,19 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types import FSInputFile
 
 try:
-    from openpyxl imp
+    from openpyxl import Workbook
 except ImportError:
-    Workbook = 
+    Workbook = None
 
 
 # =========================
 # ENV / CONFIG
 # =========================
-BOT_TOKEN = os.getenv(".strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+GROUP_CHAT_ID_RAW = (os.getenv("GROUP_CHAT_ID") or os.getenv("GROUP_ID") or "").strip()
 
-
-DATA_DIR = os.getenv("
-DB_PATH = os.getenv("DB_PATH", os.path.join(
+DATA_DIR = os.getenv("DATA_DIR", "data")
+DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "database.db"))
 
 ALLOWED_USER_IDS_RAW = (os.getenv("ALLOWED_USER_IDS") or "").strip()
 ALLOWED_USER_IDS = set()
