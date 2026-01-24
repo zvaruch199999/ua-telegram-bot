@@ -415,7 +415,6 @@ router = Router()
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔️ Доступ заборонено.")
         return
 
     txt = (
@@ -432,7 +431,6 @@ async def cmd_start(message: types.Message):
 @router.message(Command("new"))
 async def cmd_new(message: types.Message, state: FSMContext):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔️ Доступ заборонено.")
         return
 
     username = message.from_user.username or str(message.from_user.id)
@@ -831,7 +829,7 @@ async def cb_status(call: types.CallbackQuery):
         return
 
     if not is_allowed(call.from_user.id):
-        await call.answer("⛔️ Нема доступу", show_alert=True)
+        await call.answer()
         return
 
     offer = get_offer(offer_id)
@@ -986,7 +984,6 @@ def format_stats() -> str:
 @router.message(Command("stats"))
 async def cmd_stats(message: types.Message):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔️ Доступ заборонено.")
         return
     await message.answer(format_stats())
 
@@ -1120,7 +1117,6 @@ def export_to_excel(filepath: str, period: str = "all") -> None:
 @router.message(Command("export"))
 async def cmd_export(message: types.Message):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔️ Доступ заборонено.")
         return
 
     if Workbook is None:
